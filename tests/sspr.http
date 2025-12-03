@@ -1,0 +1,513 @@
+### Native Auth API - Self-Service Password Reset (SSPR)
+### Microsoft Entra External ID - Password Reset Examples
+
+### =============================================================================
+### VARIABLES - Configure these for your tenant and application
+### =============================================================================
+
+@tenant_subdomain = contoso
+@tenant_domain = contoso.onmicrosoft.com
+@client_id = 00001111-aaaa-2222-bbbb-3333cccc4444
+@base_url = https://{{tenant_subdomain}}.ciamlogin.com/{{tenant_domain}}
+
+# User credentials
+@username = testuser@example.com
+@new_password = NewSecureP@ssw0rd456!
+
+# Scopes for optional token acquisition after reset
+@scope = openid profile offline_access
+
+### =============================================================================
+### FLOW 1: Complete SSPR Flow (All 5 Steps)
+### =============================================================================
+### Full password reset flow with OTP verification and polling
+### Continuation tokens: start → challenge → continue → submit → poll_completion
+
+### Step 1: Start Password Reset
+# @name sspr_start
+# Initiates password reset for specified username
+# Returns: continuation_token for challenge step
+POST {{base_url}}/resetpassword/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&username={{username}}
+
+###
+
+@sspr_token_1 = {{sspr_start.response.body.continuation_token}}
+
+### Step 2: Challenge - Send OTP to Email
+# @name sspr_challenge
+# Sends OTP to user's registered email
+# Response: challenge_type=oob, challenge_channel=email, code_length=8, etc.
+POST {{base_url}}/resetpassword/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&continuation_token={{sspr_token_1}}
+
+###
+
+@sspr_token_2 = {{sspr_challenge.response.body.continuation_token}}
+@code_length = {{sspr_challenge.response.body.code_length}}
+@challenge_target = {{sspr_challenge.response.body.challenge_target_label}}
+
+### Step 3: Continue - Verify OTP Code
+# @name sspr_continue
+# User submits OTP received in email
+# MANUAL: Replace 'YOUR_OTP_CODE' with actual 8-digit code
+# Returns: continuation_token with extended expiry (expires_in: 600 seconds)
+POST {{base_url}}/resetpassword/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{sspr_token_2}}
+&grant_type=oob
+&oob=YOUR_OTP_CODE
+
+###
+
+@sspr_token_3 = {{sspr_continue.response.body.continuation_token}}
+@token_expires_in = {{sspr_continue.response.body.expires_in}}
+
+### Step 4: Submit New Password
+# @name sspr_submit
+# Submit new password for the account
+# Returns: continuation_token and poll_interval (seconds to wait between polls)
+POST {{base_url}}/resetpassword/v1.0/submit
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{sspr_token_3}}
+&new_password={{new_password}}
+
+###
+
+@sspr_token_4 = {{sspr_submit.response.body.continuation_token}}
+@poll_interval = {{sspr_submit.response.body.poll_interval}}
+
+### Step 5: Poll Completion Status
+# @name sspr_poll_1
+# Check if password reset completed successfully
+# Response status values: "succeeded", "failed", "in_progress", "not_started"
+# Poll every poll_interval seconds until status = "succeeded"
+POST {{base_url}}/resetpassword/v1.0/poll_completion
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{sspr_token_4}}
+
+###
+
+@sspr_token_5 = {{sspr_poll_1.response.body.continuation_token}}
+@reset_status = {{sspr_poll_1.response.body.status}}
+
+### Step 6 (Optional): Poll Again if Not Succeeded
+# @name sspr_poll_2
+# Continue polling if status was "in_progress"
+# Wait poll_interval seconds between attempts
+POST {{base_url}}/resetpassword/v1.0/poll_completion
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{sspr_token_5}}
+
+###
+
+@sspr_token_6 = {{sspr_poll_2.response.body.continuation_token}}
+
+### Step 7 (Optional): Get Tokens After Successful Reset
+# @name sspr_get_tokens
+# After status = "succeeded", optionally exchange continuation_token for auth tokens
+# This allows automatic sign-in after password reset
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=continuation_token
+&continuation_token={{sspr_token_6}}
+&scope={{scope}}
+
+###
+
+@access_token = {{sspr_get_tokens.response.body.access_token}}
+@refresh_token = {{sspr_get_tokens.response.body.refresh_token}}
+@id_token = {{sspr_get_tokens.response.body.id_token}}
+
+### =============================================================================
+### FLOW 2: SSPR with Immediate Sign-In
+### =============================================================================
+### Reset password and immediately authenticate user
+
+### Step 1: Start
+# @name sspr_immediate_start
+POST {{base_url}}/resetpassword/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&username={{username}}
+
+###
+
+@immediate_token_1 = {{sspr_immediate_start.response.body.continuation_token}}
+
+### Step 2: Challenge
+# @name sspr_immediate_challenge
+POST {{base_url}}/resetpassword/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&continuation_token={{immediate_token_1}}
+
+###
+
+@immediate_token_2 = {{sspr_immediate_challenge.response.body.continuation_token}}
+
+### Step 3: Verify OTP
+# @name sspr_immediate_continue
+# MANUAL: Replace with actual OTP
+POST {{base_url}}/resetpassword/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{immediate_token_2}}
+&grant_type=oob
+&oob=YOUR_OTP_CODE
+
+###
+
+@immediate_token_3 = {{sspr_immediate_continue.response.body.continuation_token}}
+
+### Step 4: Submit New Password
+# @name sspr_immediate_submit
+POST {{base_url}}/resetpassword/v1.0/submit
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{immediate_token_3}}
+&new_password={{new_password}}
+
+###
+
+@immediate_token_4 = {{sspr_immediate_submit.response.body.continuation_token}}
+
+### Step 5: Poll Until Succeeded
+# @name sspr_immediate_poll
+POST {{base_url}}/resetpassword/v1.0/poll_completion
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{immediate_token_4}}
+
+###
+
+@immediate_token_5 = {{sspr_immediate_poll.response.body.continuation_token}}
+
+### Step 6: Get Tokens (Immediate Sign-In)
+# @name sspr_immediate_tokens
+# User is now authenticated with new password
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=continuation_token
+&continuation_token={{immediate_token_5}}
+&scope={{scope}}
+
+###
+
+### =============================================================================
+### FLOW 3: SSPR Polling Pattern (Multiple Polls)
+### =============================================================================
+### Demonstrates proper polling pattern with retry logic
+
+### Complete Steps 1-4 from Flow 1, then start polling:
+
+### Poll Attempt 1
+# @name sspr_polling_1
+POST {{base_url}}/resetpassword/v1.0/poll_completion
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+
+###
+
+# Wait poll_interval seconds (typically 2 seconds)
+
+### Poll Attempt 2
+# @name sspr_polling_2
+POST {{base_url}}/resetpassword/v1.0/poll_completion
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{sspr_polling_1.response.body.continuation_token}}
+
+###
+
+### Poll Attempt 3
+# @name sspr_polling_3
+POST {{base_url}}/resetpassword/v1.0/poll_completion
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{sspr_polling_2.response.body.continuation_token}}
+
+###
+
+### Poll Attempt 4
+# @name sspr_polling_4
+# Continue until status = "succeeded"
+POST {{base_url}}/resetpassword/v1.0/poll_completion
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{sspr_polling_3.response.body.continuation_token}}
+
+###
+
+### =============================================================================
+### ERROR SCENARIOS - Common SSPR Errors
+### =============================================================================
+
+### Error 1: User Not Found
+# @name error_user_not_found_sspr
+# Response: {"error":"user_not_found"}
+POST {{base_url}}/resetpassword/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&username=nonexistent.user@example.com
+
+###
+
+### Error 2: Invalid OTP Code
+# @name error_invalid_otp_sspr
+# Response: {"error":"invalid_grant","suberror":"invalid_oob_value"}
+POST {{base_url}}/resetpassword/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&grant_type=oob
+&oob=00000000
+
+###
+
+### Error 3: Password Too Weak
+# @name error_weak_password_sspr
+# Response: {"error":"invalid_grant","suberror":"password_too_weak"}
+POST {{base_url}}/resetpassword/v1.0/submit
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&new_password=weak
+
+###
+
+### Error 4: Password Too Short
+# @name error_short_password_sspr
+# Response: {"error":"invalid_grant","suberror":"password_too_short"}
+# Password must be at least 8 characters
+POST {{base_url}}/resetpassword/v1.0/submit
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&new_password=Short1!
+
+###
+
+### Error 5: Password Too Long
+# @name error_long_password_sspr
+# Response: {"error":"invalid_grant","suberror":"password_too_long"}
+# Password must be 256 characters or less
+POST {{base_url}}/resetpassword/v1.0/submit
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&new_password=ThisPasswordIsWayTooLongAndExceedsTheMaximumAllowedLengthOf256CharactersWhichIsTheAbsoluteLimitForPasswordsInMicrosoftEntraIDThisIsJustAnExampleToShowWhatHappensWhenYouTryToSubmitAPasswordThatExceedsTheMaximumAllowedLengthSoWeNeedToKeepTypingUntilWeReachThatLimitWhichIsQuiteALotOfCharactersActually
+
+###
+
+### Error 6: Password Recently Used
+# @name error_password_reused_sspr
+# Response: {"error":"invalid_grant","suberror":"password_recently_used"}
+# Occurs when password policy prevents password reuse
+POST {{base_url}}/resetpassword/v1.0/submit
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&new_password=OldPasswordThatWasUsedBefore123!
+
+###
+
+### Error 7: Password Banned
+# @name error_password_banned_sspr
+# Response: {"error":"invalid_grant","suberror":"password_banned"}
+# Password is in Microsoft's banned password list
+POST {{base_url}}/resetpassword/v1.0/submit
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&new_password=Password123
+
+###
+
+### Error 8: Expired Continuation Token
+# @name error_expired_token_sspr
+# Response: {"error":"expired_token"}
+# Continuation token expired (typically after 10 minutes)
+POST {{base_url}}/resetpassword/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&continuation_token=eyJ0eXAiOiJKV1QiOLD_EXPIRED_TOKEN
+
+###
+
+### Error 9: Invalid Client ID
+# @name error_invalid_client_sspr
+# Response: {"error":"unauthorized_client"}
+POST {{base_url}}/resetpassword/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id=00000000-0000-0000-0000-000000000000
+&challenge_type=oob redirect
+&username={{username}}
+
+###
+
+### Error 10: Missing Redirect Challenge Type
+# @name error_no_redirect_sspr
+# Response: {"error":"unsupported_challenge_type"}
+# challenge_type must include "redirect"
+POST {{base_url}}/resetpassword/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob
+&username={{username}}
+
+###
+
+### Error 11: Reset Failed Status
+# @name error_reset_failed
+# Response: {"status":"failed","continuation_token":"..."}
+# When polling returns "failed", must restart from submit step
+POST {{base_url}}/resetpassword/v1.0/poll_completion
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+
+###
+
+### =============================================================================
+### ADVANCED: Password Reset with Account Verification
+### =============================================================================
+### Some scenarios may require additional verification steps
+
+### Start with Account Verification
+# @name sspr_verify_start
+POST {{base_url}}/resetpassword/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&username={{username}}
+
+###
+
+@verify_token_1 = {{sspr_verify_start.response.body.continuation_token}}
+
+### Challenge - Multiple Verification Options
+# @name sspr_verify_challenge
+# Response may include multiple challenge options
+# User selects which method to use for verification
+POST {{base_url}}/resetpassword/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&continuation_token={{verify_token_1}}
+
+###
+
+### =============================================================================
+### NOTES ON SSPR CONTINUATION TOKENS
+### =============================================================================
+#
+# SSPR has the longest continuation token chain (5+ steps):
+#
+# 1. /start → token_1 (initiates reset request)
+# 2. /challenge → token_2 (OTP sent to email)
+# 3. /continue → token_3 (OTP verified, extended expiry: 600s)
+# 4. /submit → token_4 (new password submitted, poll_interval returned)
+# 5. /poll_completion → token_5 (check status, may need multiple polls)
+# 6. Repeat /poll_completion until status = "succeeded"
+# 7. Optional: /oauth2/v2.0/token (get auth tokens)
+#
+# Key points:
+# - Token from /continue has extended lifetime (expires_in: 600)
+# - Each poll returns a new continuation_token
+# - Must wait poll_interval seconds between polls
+# - Only after "succeeded" status can you get auth tokens
+#
+### =============================================================================
+### NOTES ON POLLING MECHANISM
+### =============================================================================
+#
+# The polling pattern ensures password reset completes properly:
+#
+# 1. STATUS VALUES:
+#    - "succeeded": Reset complete, can get tokens
+#    - "failed": Reset failed, retry submit step
+#    - "in_progress": Still processing, poll again
+#    - "not_started": Backend hasn't started, poll again
+#
+# 2. POLL_INTERVAL:
+#    - Returned in /submit response (typically 2 seconds)
+#    - Wait this duration between poll attempts
+#    - Prevents overwhelming the backend
+#
+# 3. BEST PRACTICES:
+#    - Always check status field in response
+#    - Use exponential backoff if polls take too long
+#    - Set maximum poll attempts to avoid infinite loops
+#    - Each poll returns new continuation_token
+#
+# 4. TIMEOUT HANDLING:
+#    - Continuation tokens from /continue have longer expiry
+#    - But don't poll forever - set reasonable timeout
+#    - If timeout reached, may need to restart flow
+#
+### =============================================================================
+### NOTES ON CHALLENGE TYPES IN SSPR
+### =============================================================================
+#
+# SSPR only supports OOB (email OTP) challenge type:
+#
+# - Always use: "oob redirect"
+# - Password challenge type not applicable (that's what we're resetting!)
+# - Redirect is always required as fallback
+#
+# Flow characteristics:
+# - OTP sent to user's registered email
+# - User must have access to email to complete reset
+# - Code length typically 8 digits
+# - Challenge target label shows masked email (e.g., "c***r@co**o**o.com")
+# - OTP has limited validity period
+#
+###

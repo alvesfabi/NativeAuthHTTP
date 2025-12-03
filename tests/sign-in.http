@@ -1,0 +1,425 @@
+### Native Auth API - Sign-In Flows
+### Microsoft Entra External ID - User Authentication Examples
+
+### =============================================================================
+### VARIABLES - Configure these for your tenant and application
+### =============================================================================
+
+@tenant_subdomain = contoso
+@tenant_domain = contoso.onmicrosoft.com
+@client_id = 00001111-aaaa-2222-bbbb-3333cccc4444
+@base_url = https://{{tenant_subdomain}}.ciamlogin.com/{{tenant_domain}}
+
+# User credentials
+@username = testuser@example.com
+@password = SecureP@ssw0rd123!
+
+# Scopes for token requests
+@scope = openid profile offline_access
+
+### =============================================================================
+### FLOW 1: Sign-In with Email + Password
+### =============================================================================
+### Most common authentication flow using password credentials
+### Continuation tokens: initiate → challenge → token
+
+### Step 1: Initiate Sign-In
+# @name signin_initiate
+# Starts sign-in flow with username
+# Returns: continuation_token for challenge step
+POST {{base_url}}/oauth2/v2.0/initiate
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&username={{username}}
+
+###
+
+@signin_token_1 = {{signin_initiate.response.body.continuation_token}}
+
+### Step 2: Challenge - Request Password Authentication
+# @name signin_challenge
+# Requests password challenge type
+# Response: challenge_type=password, continuation_token
+POST {{base_url}}/oauth2/v2.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&continuation_token={{signin_token_1}}
+
+###
+
+@signin_token_2 = {{signin_challenge.response.body.continuation_token}}
+
+### Step 3: Submit Password and Get Tokens
+# @name signin_password_tokens
+# Submit password and immediately receive access_token, refresh_token, id_token
+# This completes the sign-in flow
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{signin_token_2}}
+&grant_type=password
+&password={{password}}
+&scope={{scope}}
+
+###
+
+@access_token = {{signin_password_tokens.response.body.access_token}}
+@refresh_token = {{signin_password_tokens.response.body.refresh_token}}
+@id_token = {{signin_password_tokens.response.body.id_token}}
+@expires_in = {{signin_password_tokens.response.body.expires_in}}
+
+### =============================================================================
+### FLOW 2: Sign-In with Email OTP (One-Time Passcode)
+### =============================================================================
+### Passwordless authentication using email OTP
+
+### Step 1: Initiate Sign-In with OTP
+# @name signin_otp_initiate
+POST {{base_url}}/oauth2/v2.0/initiate
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&username={{username}}
+
+###
+
+@otp_token_1 = {{signin_otp_initiate.response.body.continuation_token}}
+
+### Step 2: Challenge - Send OTP to Email
+# @name signin_otp_challenge
+# OTP is sent to user's email
+# Response includes: challenge_type=oob, challenge_channel=email, code_length, challenge_target_label
+POST {{base_url}}/oauth2/v2.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&continuation_token={{otp_token_1}}
+
+###
+
+@otp_token_2 = {{signin_otp_challenge.response.body.continuation_token}}
+
+### Step 3: Submit OTP and Get Tokens
+# @name signin_otp_tokens
+# MANUAL: Replace 'YOUR_OTP_CODE' with actual 8-digit code from email
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{otp_token_2}}
+&grant_type=oob
+&oob=YOUR_OTP_CODE
+&scope={{scope}}
+
+###
+
+@otp_access_token = {{signin_otp_tokens.response.body.access_token}}
+@otp_refresh_token = {{signin_otp_tokens.response.body.refresh_token}}
+@otp_id_token = {{signin_otp_tokens.response.body.id_token}}
+
+### =============================================================================
+### FLOW 3: Token Refresh Flow
+### =============================================================================
+### Use refresh_token to get new access_token without re-authentication
+
+### Get New Access Token using Refresh Token
+# @name token_refresh
+# No continuation_token needed - uses refresh_token from previous sign-in
+# Returns: new access_token, refresh_token, id_token
+# Note: Refresh tokens have longer lifetime than access tokens
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=refresh_token
+&refresh_token={{refresh_token}}
+&scope={{scope}}
+
+###
+
+@new_access_token = {{token_refresh.response.body.access_token}}
+@new_refresh_token = {{token_refresh.response.body.refresh_token}}
+@new_id_token = {{token_refresh.response.body.id_token}}
+
+### =============================================================================
+### FLOW 4: Sign-In with Specific Scopes
+### =============================================================================
+### Request specific permissions/scopes during authentication
+
+### Step 1: Initiate with Custom Scopes
+# @name signin_scopes_initiate
+POST {{base_url}}/oauth2/v2.0/initiate
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&username={{username}}
+
+###
+
+@scopes_token_1 = {{signin_scopes_initiate.response.body.continuation_token}}
+
+### Step 2: Challenge
+# @name signin_scopes_challenge
+POST {{base_url}}/oauth2/v2.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&continuation_token={{scopes_token_1}}
+
+###
+
+@scopes_token_2 = {{signin_scopes_challenge.response.body.continuation_token}}
+
+### Step 3: Submit Password with Custom Scopes
+# @name signin_scopes_tokens
+# Request openid (ID token), profile (user info), offline_access (refresh token)
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{scopes_token_2}}
+&grant_type=password
+&password={{password}}
+&scope=openid profile offline_access
+
+###
+
+### =============================================================================
+### FLOW 5: Sign-In with Only openid Scope (No Refresh Token)
+### =============================================================================
+### When offline_access is not requested, no refresh_token is returned
+
+### Step 1: Initiate
+# @name signin_no_refresh_initiate
+POST {{base_url}}/oauth2/v2.0/initiate
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&username={{username}}
+
+###
+
+@no_refresh_token_1 = {{signin_no_refresh_initiate.response.body.continuation_token}}
+
+### Step 2: Challenge
+# @name signin_no_refresh_challenge
+POST {{base_url}}/oauth2/v2.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&continuation_token={{no_refresh_token_1}}
+
+###
+
+@no_refresh_token_2 = {{signin_no_refresh_challenge.response.body.continuation_token}}
+
+### Step 3: Get Tokens without offline_access
+# @name signin_no_refresh_tokens
+# Response will NOT include refresh_token
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{no_refresh_token_2}}
+&grant_type=password
+&password={{password}}
+&scope=openid profile
+
+###
+
+### =============================================================================
+### ERROR SCENARIOS - Common Sign-In Errors
+### =============================================================================
+
+### Error 1: User Not Found
+# @name error_user_not_found
+# Response: {"error":"user_not_found"}
+POST {{base_url}}/oauth2/v2.0/initiate
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&username=nonexistent.user@example.com
+
+###
+
+### Error 2: Invalid Password
+# @name error_invalid_password
+# Response: {"error":"invalid_grant","error_description":"AADSTS50126"}
+# First run Flow 1 steps 1-2, then use wrong password
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&grant_type=password
+&password=WrongPassword123!
+&scope={{scope}}
+
+###
+
+### Error 3: Invalid OTP Code
+# @name error_invalid_otp_signin
+# Response: {"error":"invalid_grant","suberror":"invalid_oob_value"}
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&grant_type=oob
+&oob=00000000
+&scope={{scope}}
+
+###
+
+### Error 4: Expired Continuation Token
+# @name error_expired_token_signin
+# Response: {"error":"expired_token"}
+POST {{base_url}}/oauth2/v2.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&continuation_token=eyJ0eXAiOiJKV1QiOLD_EXPIRED_TOKEN
+
+###
+
+### Error 5: Invalid Refresh Token
+# @name error_invalid_refresh_token
+# Response: {"error":"invalid_grant"}
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=refresh_token
+&refresh_token=INVALID_OR_EXPIRED_REFRESH_TOKEN
+&scope={{scope}}
+
+###
+
+### Error 6: Missing Redirect Challenge Type
+# @name error_no_redirect_signin
+# Response: {"error":"unsupported_challenge_type"}
+POST {{base_url}}/oauth2/v2.0/initiate
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password
+&username={{username}}
+
+###
+
+### Error 7: Invalid Client ID
+# @name error_invalid_client_signin
+# Response: {"error":"unauthorized_client"}
+POST {{base_url}}/oauth2/v2.0/initiate
+Content-Type: application/x-www-form-urlencoded
+
+client_id=00000000-0000-0000-0000-000000000000
+&challenge_type=password redirect
+&username={{username}}
+
+###
+
+### Error 8: Account Locked or Disabled
+# @name error_account_locked
+# Response: {"error":"invalid_grant","error_description":"AADSTS50057: User account is disabled"}
+# Occurs when user account is disabled in Entra ID
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&grant_type=password
+&password={{password}}
+&scope={{scope}}
+
+###
+
+### =============================================================================
+### ADVANCED: Token Refresh with Rotation
+### =============================================================================
+### When refresh token rotation is enabled, each refresh returns new refresh_token
+
+### Refresh #1 - Get New Tokens
+# @name token_refresh_1
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=refresh_token
+&refresh_token={{refresh_token}}
+&scope={{scope}}
+
+###
+
+@refresh_token_2 = {{token_refresh_1.response.body.refresh_token}}
+
+### Refresh #2 - Use New Refresh Token
+# @name token_refresh_2
+# Note: Previous refresh_token is now invalidated
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=refresh_token
+&refresh_token={{refresh_token_2}}
+&scope={{scope}}
+
+###
+
+@refresh_token_3 = {{token_refresh_2.response.body.refresh_token}}
+
+### =============================================================================
+### NOTES ON CONTINUATION TOKENS IN SIGN-IN
+### =============================================================================
+#
+# Sign-in continuation token flow:
+#
+# 1. /initiate → token_1 (identifies user session)
+# 2. /challenge → token_2 (auth method selected)
+# 3. /token → access_token, refresh_token, id_token (authentication complete)
+#
+# Key differences from sign-up:
+# - Fewer steps (no email verification required)
+# - Token endpoint (/oauth2/v2.0/token) accepts both credential submission AND token issuance
+# - Challenge type determines authentication method (password vs OTP)
+#
+### =============================================================================
+### NOTES ON TOKEN TYPES
+### =============================================================================
+#
+# access_token:
+#   - JWT token for API authorization
+#   - Short-lived (typically 1 hour, check expires_in)
+#   - Include in API requests: Authorization: Bearer {access_token}
+#
+# refresh_token:
+#   - Opaque token for getting new access tokens
+#   - Long-lived (days/weeks depending on configuration)
+#   - Only returned if "offline_access" scope requested
+#   - Can be revoked by admin or user
+#
+# id_token:
+#   - JWT containing user identity claims
+#   - Used for user profile information
+#   - Contains: sub (user ID), email, name, etc.
+#   - Verify signature before trusting claims
+#
+# Scope meanings:
+#   - openid: Required for id_token
+#   - profile: Include profile claims in id_token
+#   - offline_access: Get refresh_token for long-term access
+#
+###

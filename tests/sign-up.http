@@ -1,0 +1,553 @@
+### Native Auth API - Sign-Up Flows
+### Microsoft Entra External ID - User Registration Examples
+
+### =============================================================================
+### VARIABLES - Configure these for your tenant and application
+### =============================================================================
+
+@tenant_subdomain = contoso
+@tenant_domain = contoso.onmicrosoft.com
+@client_id = 00001111-aaaa-2222-bbbb-3333cccc4444
+@base_url = https://{{tenant_subdomain}}.ciamlogin.com/{{tenant_domain}}
+
+# User credentials
+@username = testuser@example.com
+@password = SecureP@ssw0rd123!
+@display_name = John Doe
+@given_name = John
+@surname = Doe
+@postal_code = 12345
+@city = Seattle
+
+# Custom extension attribute (format: extension_{appId_without_hyphens}_{attribute_name})
+@app_id_no_hyphens = 2588abcdwhtfeehjjeeqwertc
+@custom_attribute_age = extension_{{app_id_no_hyphens}}_age
+@age_value = 30
+
+# Scopes for token requests
+@scope = openid profile offline_access
+
+### =============================================================================
+### FLOW 1: Sign-Up with Email + Password (Complete Flow)
+### =============================================================================
+### This demonstrates the full sign-up flow with password authentication
+### Continuation tokens progress through: start → challenge → continue → token
+
+### Step 1: Start Sign-Up
+# @name signup_start_password
+# Initiates sign-up with email and password
+# Returns: continuation_token for next step
+POST {{base_url}}/signup/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&username={{username}}
+
+###
+
+@continuation_token_1 = {{signup_start_password.response.body.continuation_token}}
+
+### Step 2: Challenge - Request OOB (Email OTP)
+# @name signup_challenge_oob
+# Requests email OTP to be sent
+# Challenge response shows: challenge_type=oob, challenge_channel=email, code_length, etc.
+POST {{base_url}}/signup/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&continuation_token={{continuation_token_1}}
+
+###
+
+@continuation_token_2 = {{signup_challenge_oob.response.body.continuation_token}}
+
+### Step 3: Continue - Submit OTP Code
+# @name signup_continue_otp
+# User enters OTP received in email
+# MANUAL: Replace 'YOUR_OTP_CODE' with actual 8-digit code from email
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{continuation_token_2}}
+&grant_type=oob
+&oob=YOUR_OTP_CODE
+
+###
+
+@continuation_token_3 = {{signup_continue_otp.response.body.continuation_token}}
+
+### Step 4: Challenge - Request Password
+# @name signup_challenge_password
+# After OTP verification, request password challenge
+# Response: challenge_type=password, continuation_token
+POST {{base_url}}/signup/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&continuation_token={{continuation_token_3}}
+
+###
+
+@continuation_token_4 = {{signup_challenge_password.response.body.continuation_token}}
+
+### Step 5: Continue - Submit Password
+# @name signup_continue_password
+# Submit password to complete registration
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{continuation_token_4}}
+&grant_type=password
+&password={{password}}
+
+###
+
+@continuation_token_5 = {{signup_continue_password.response.body.continuation_token}}
+
+### Step 6: Get Security Tokens
+# @name signup_get_tokens
+# Exchange final continuation_token for access_token, refresh_token, id_token
+# This completes the sign-up flow
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=continuation_token
+&continuation_token={{continuation_token_5}}
+&scope={{scope}}
+
+###
+
+@access_token = {{signup_get_tokens.response.body.access_token}}
+@refresh_token = {{signup_get_tokens.response.body.refresh_token}}
+@id_token = {{signup_get_tokens.response.body.id_token}}
+
+### =============================================================================
+### FLOW 2: Sign-Up with Email OTP Only (No Password)
+### =============================================================================
+### Simplified flow when app uses only email OTP for authentication
+
+### Step 1: Start Sign-Up (OTP Only)
+# @name signup_otp_start
+POST {{base_url}}/signup/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&username={{username}}
+
+###
+
+@otp_token_1 = {{signup_otp_start.response.body.continuation_token}}
+
+### Step 2: Challenge - Send OTP
+# @name signup_otp_challenge
+POST {{base_url}}/signup/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&continuation_token={{otp_token_1}}
+
+###
+
+@otp_token_2 = {{signup_otp_challenge.response.body.continuation_token}}
+
+### Step 3: Continue - Verify OTP
+# @name signup_otp_continue
+# MANUAL: Replace 'YOUR_OTP_CODE' with actual code
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{otp_token_2}}
+&grant_type=oob
+&oob=YOUR_OTP_CODE
+
+###
+
+@otp_token_3 = {{signup_otp_continue.response.body.continuation_token}}
+
+### Step 4: Get Tokens
+# @name signup_otp_tokens
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=continuation_token
+&continuation_token={{otp_token_3}}
+&scope={{scope}}
+
+###
+
+### =============================================================================
+### FLOW 3: Sign-Up with Password and Attributes in Start Request
+### =============================================================================
+### Submit password and user attributes in initial start request
+
+### Step 1: Start with Password and Attributes
+# @name signup_all_start
+# Submitting password and attributes upfront can reduce round trips
+POST {{base_url}}/signup/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&username={{username}}
+&password={{password}}
+&attributes={"displayName":"{{display_name}}","givenName":"{{given_name}}","surname":"{{surname}}","postalCode":"{{postal_code}}","city":"{{city}}"}
+
+###
+
+@all_token_1 = {{signup_all_start.response.body.continuation_token}}
+
+### Step 2: Challenge - Request OOB
+# @name signup_all_challenge
+POST {{base_url}}/signup/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&continuation_token={{all_token_1}}
+
+###
+
+@all_token_2 = {{signup_all_challenge.response.body.continuation_token}}
+
+### Step 3: Continue - Submit OTP
+# @name signup_all_otp
+# MANUAL: Replace with actual OTP code
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{all_token_2}}
+&grant_type=oob
+&oob=YOUR_OTP_CODE
+
+###
+
+@all_token_3 = {{signup_all_otp.response.body.continuation_token}}
+
+### Step 4: Get Tokens
+# @name signup_all_tokens
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=continuation_token
+&continuation_token={{all_token_3}}
+&scope={{scope}}
+
+###
+
+### =============================================================================
+### FLOW 4: Sign-Up with Required Attributes (Separate Continue Call)
+### =============================================================================
+### When attributes are required but not provided initially
+
+### Step 1: Start Sign-Up
+# @name signup_attr_start
+POST {{base_url}}/signup/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&username={{username}}
+
+###
+
+@attr_token_1 = {{signup_attr_start.response.body.continuation_token}}
+
+### Step 2: Challenge
+# @name signup_attr_challenge
+POST {{base_url}}/signup/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&continuation_token={{attr_token_1}}
+
+###
+
+@attr_token_2 = {{signup_attr_challenge.response.body.continuation_token}}
+
+### Step 3: Submit OTP
+# @name signup_attr_otp
+# MANUAL: Replace with actual OTP
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{attr_token_2}}
+&grant_type=oob
+&oob=YOUR_OTP_CODE
+
+###
+
+@attr_token_3 = {{signup_attr_otp.response.body.continuation_token}}
+
+### Step 4: Submit Password
+# @name signup_attr_password
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{attr_token_3}}
+&grant_type=password
+&password={{password}}
+
+###
+
+@attr_token_4 = {{signup_attr_password.response.body.continuation_token}}
+
+### Step 5: Submit Required Attributes
+# @name signup_attr_submit
+# If API returns "attributes_required" error, submit them here
+# Attributes JSON includes built-in and custom extension attributes
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{attr_token_4}}
+&grant_type=attributes
+&attributes={"displayName":"{{display_name}}","givenName":"{{given_name}}","surname":"{{surname}}","postalCode":"{{postal_code}}","{{custom_attribute_age}}":"{{age_value}}"}
+
+###
+
+@attr_token_5 = {{signup_attr_submit.response.body.continuation_token}}
+
+### Step 6: Get Tokens
+# @name signup_attr_tokens
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=continuation_token
+&continuation_token={{attr_token_5}}
+&scope={{scope}}
+
+###
+
+### =============================================================================
+### FLOW 5: Sign-Up with Custom Extension Attributes (CheckboxMultiSelect)
+### =============================================================================
+### Demonstrates different attribute input types
+
+### Step 1: Start with Multiple Attribute Types
+# @name signup_custom_start
+# Shows: TextBox (jobTitle), CheckboxMultiSelect (hobbies - comma-separated)
+POST {{base_url}}/signup/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&username={{username}}
+&attributes={"displayName":"{{display_name}}","extension_{{app_id_no_hyphens}}_jobTitle":"Software Engineer","extension_{{app_id_no_hyphens}}_hobbies":"Dancing,Swimming,Traveling","{{custom_attribute_age}}":"{{age_value}}"}
+
+###
+
+@custom_token_1 = {{signup_custom_start.response.body.continuation_token}}
+
+### Step 2: Challenge
+# @name signup_custom_challenge
+POST {{base_url}}/signup/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&continuation_token={{custom_token_1}}
+
+###
+
+@custom_token_2 = {{signup_custom_challenge.response.body.continuation_token}}
+
+### Step 3: Submit OTP
+# @name signup_custom_otp
+# MANUAL: Replace with actual OTP
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{custom_token_2}}
+&grant_type=oob
+&oob=YOUR_OTP_CODE
+
+###
+
+@custom_token_3 = {{signup_custom_otp.response.body.continuation_token}}
+
+### Step 4: Submit Password
+# @name signup_custom_password
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token={{custom_token_3}}
+&grant_type=password
+&password={{password}}
+
+###
+
+@custom_token_4 = {{signup_custom_password.response.body.continuation_token}}
+
+### Step 5: Get Tokens
+# @name signup_custom_tokens
+POST {{base_url}}/oauth2/v2.0/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&grant_type=continuation_token
+&continuation_token={{custom_token_4}}
+&scope={{scope}}
+
+###
+
+### =============================================================================
+### ERROR SCENARIOS - Common Sign-Up Errors
+### =============================================================================
+
+### Error 1: User Already Exists
+# @name error_user_exists
+# Response: {"error":"user_already_exists","suberror":"user_already_exists"}
+POST {{base_url}}/signup/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&username=existing.user@example.com
+
+###
+
+### Error 2: Password Too Weak
+# @name error_weak_password
+# Response: {"error":"invalid_grant","suberror":"password_too_weak"}
+# First run flow 1 steps 1-4, then submit weak password
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&grant_type=password
+&password=weak
+
+###
+
+### Error 3: Password Too Short
+# @name error_short_password
+# Response: {"error":"invalid_grant","suberror":"password_too_short"}
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&grant_type=password
+&password=Short1!
+
+###
+
+### Error 4: Invalid OTP Code
+# @name error_invalid_otp
+# Response: {"error":"invalid_grant","suberror":"invalid_oob_value"}
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&grant_type=oob
+&oob=00000000
+
+###
+
+### Error 5: Expired Continuation Token
+# @name error_expired_token
+# Response: {"error":"expired_token"}
+# Use an old continuation token
+POST {{base_url}}/signup/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&continuation_token=eyJ0eXAiOiJKV1QiOLD_TOKEN_HERE
+
+###
+
+### Error 6: Missing Redirect in Challenge Type
+# @name error_missing_redirect
+# Response: {"error":"unsupported_challenge_type"}
+# challenge_type must always include "redirect"
+POST {{base_url}}/signup/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password
+&username={{username}}
+
+###
+
+### Error 7: Invalid Attribute Format
+# @name error_invalid_attributes
+# Response: {"error":"invalid_grant","suberror":"attribute_validation_failed","invalid_attributes":[...]}
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&grant_type=attributes
+&attributes={"invalid_attribute_name":"value"}
+
+###
+
+### Error 8: Invalid Client ID
+# @name error_invalid_client
+# Response: {"error":"unauthorized_client"}
+POST {{base_url}}/signup/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id=00000000-0000-0000-0000-000000000000
+&challenge_type=oob password redirect
+&username={{username}}
+
+###
+
+### =============================================================================
+### NOTES ON CONTINUATION TOKENS
+### =============================================================================
+# 
+# Continuation tokens are the backbone of Native Auth flows:
+# 
+# 1. UNIQUE STATE: Each token maintains the state of your sign-up session
+# 2. SEQUENTIAL: Each endpoint returns a new token for the next step
+# 3. TIME-LIMITED: Tokens expire (usually after several minutes)
+# 4. ONE-TIME USE: Each token is typically used once, then replaced
+# 5. FLOW-SPECIFIC: Valid only within the same flow (sign-up, sign-in, SSPR)
+#
+# Token Flow Example:
+#   /start → token_1 → /challenge → token_2 → /continue → token_3 → /token
+#
+# =============================================================================
+### NOTES ON CHALLENGE TYPES
+### =============================================================================
+#
+# Challenge types define which authentication methods your app supports:
+#
+# - "oob" = Out-of-Band (Email OTP)
+# - "password" = Password authentication
+# - "redirect" = Browser-based fallback (ALWAYS REQUIRED in list)
+#
+# Common combinations:
+# - "oob password redirect" = Supports both OTP and password
+# - "oob redirect" = OTP only
+# - "password redirect" = Password only
+#
+# The API selects the appropriate method based on:
+# - User's tenant configuration
+# - Authentication policies
+# - Challenge types your app declares support for
+#
+###
