@@ -1,5 +1,7 @@
 # Native Auth HTTP API Examples
 
+> **Status**: Educational Preview - For learning and testing purposes
+
 This repository demonstrates how to use **Microsoft Entra External ID Native Authentication APIs** directly via HTTP requests, without using the MSAL Native Auth SDK.
 
 ## Overview
@@ -154,3 +156,35 @@ MIT License - See LICENSE file for details
 ---
 
 **Note**: These examples are for educational and testing purposes. For production applications, consider using the official MSAL Native Auth SDK which handles token management, caching, and security best practices automatically.
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and contribute to this project.
+
+Please follow the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). Be respectful and constructive in all interactions. For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
+## Security
+
+If you discover a security vulnerability, please follow responsible disclosure practices. See our [Security Policy](SECURITY.md) for details on how to report security issues.
+
+**Do not report security vulnerabilities through public GitHub issues.**
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+## Trademarks
+
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party's policies.
+
+## Support
+
+This is a community-supported project. For official Microsoft support, please refer to:
+- [Microsoft Entra Support](https://learn.microsoft.com/entra/fundamentals/how-to-get-support)
+- [Microsoft Q&A](https://learn.microsoft.com/answers/tags/455/entra-id)
+
+## Disclaimer
+
+This project is provided "as-is" without warranty of any kind. It is intended for educational purposes and should not be used in production environments without proper review and testing.
