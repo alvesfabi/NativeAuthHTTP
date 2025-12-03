@@ -415,6 +415,152 @@ client_id={{client_id}}
 ###
 
 ### =============================================================================
+### WEB FALLBACK SCENARIOS - When to Switch to Browser-Based Auth
+### =============================================================================
+
+### Scenario 1: Redirect Challenge from /start Endpoint
+# @name fallback_redirect_start_sspr
+# Tenant requires authentication methods not supported by app for password reset
+# Response: {"challenge_type": "redirect"}
+# Common reasons: MFA required for SSPR, SMS verification required
+# ACTION REQUIRED: Switch to browser-based password reset using MSAL
+POST {{base_url}}/resetpassword/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&username={{username}}
+
+###
+
+### Scenario 2: Redirect Challenge from /challenge Endpoint
+# @name fallback_redirect_challenge_sspr
+# Tenant SSPR policy requires methods app doesn't support
+# Response: {"challenge_type": "redirect"}
+# Examples: Security questions required, phone verification required
+# ACTION REQUIRED: Launch browser for password reset
+POST {{base_url}}/resetpassword/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&continuation_token=YOUR_CONTINUATION_TOKEN
+
+###
+
+### Scenario 3: Redirect for Enhanced Security
+# @name fallback_redirect_security_sspr
+# User account flagged for additional verification during password reset
+# Response: {"challenge_type": "redirect"}
+# Occurs when: High-risk user, suspicious activity, admin requires MFA for SSPR
+# ACTION REQUIRED: Redirect to browser for enhanced verification
+POST {{base_url}}/resetpassword/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob redirect
+&username=high-risk-user@example.com
+
+###
+
+### =============================================================================
+### HOW TO HANDLE WEB FALLBACK IN SSPR
+### =============================================================================
+#
+# When you receive challenge_type="redirect" during password reset:
+#
+# 1. DETECT THE REDIRECT:
+#    Response: {"challenge_type": "redirect"}
+#    HTTP Status: 200 OK (successful response)
+#
+# 2. SSPR-SPECIFIC IMPLEMENTATION:
+#    ```javascript
+#    async function handlePasswordReset(username) {
+#        const response = await fetch('/resetpassword/v1.0/start', {
+#            method: 'POST',
+#            body: new URLSearchParams({
+#                client_id: clientId,
+#                challenge_type: 'oob redirect',
+#                username: username
+#            })
+#        });
+#        
+#        const data = await response.json();
+#        
+#        if (data.challenge_type === 'redirect') {
+#            // User needs browser-based password reset
+#            await launchBrowserPasswordReset();
+#        } else if (data.continuation_token) {
+#            // Continue with native SSPR flow
+#            await continueNativePasswordReset(data.continuation_token);
+#        }
+#    }
+#    ```
+#
+# 3. BROWSER-BASED PASSWORD RESET:
+#    ```javascript
+#    async function launchBrowserPasswordReset() {
+#        // Option 1: Use MSAL password reset flow
+#        const msalInstance = new PublicClientApplication(msalConfig);
+#        
+#        const resetRequest = {
+#            scopes: ['openid'],
+#            prompt: 'login',
+#            extraQueryParameters: {
+#                // Trigger password reset flow
+#                'signup_or_signin': 'password_reset'
+#            }
+#        };
+#        
+#        await msalInstance.loginPopup(resetRequest);
+#        
+#        // Option 2: Direct browser URL
+#        const resetUrl = 'https://contoso.ciamlogin.com/contoso.onmicrosoft.com/' +
+#                        'oauth2/v2.0/authorize?...' +
+#                        '&prompt=reset_password';
+#        openBrowser(resetUrl);
+#    }
+#    ```
+#
+# 4. SCENARIOS REQUIRING WEB FALLBACK IN SSPR:
+#    - Security questions configured as SSPR method
+#    - Phone/SMS verification required
+#    - MFA enforced for password reset
+#    - Multiple verification steps required
+#    - Admin approval required for password reset
+#    - High-risk user detected (compromised account)
+#    - Account recovery requires identity verification
+#    - Conditional Access policies for SSPR
+#
+# 5. USER MESSAGING:
+#    - "Additional verification needed to reset your password"
+#    - "Your account requires extra security steps. Opening browser..."
+#    - "For security, password reset must be completed in browser"
+#    - "Your organization requires browser-based verification"
+#
+# 6. SECURITY CONSIDERATIONS:
+#    - Browser-based SSPR often more secure (MFA, device checks)
+#    - Don't cache passwords or sensitive data before launching browser
+#    - Clear any temporary data after browser auth
+#    - Validate redirect URI matches your app
+#    - Handle timeout scenarios (user doesn't complete browser flow)
+#
+# 7. MOBILE APP HANDLING:
+#    - iOS: Use ASWebAuthenticationSession for secure browser
+#    - Android: Use Custom Tabs for seamless experience
+#    - Deep link back to app: "myapp://sspr/callback"
+#    - Handle app state restoration after browser return
+#    - Test with different tenant SSPR configurations
+#
+# 8. FALLBACK TIMING:
+#    - Can occur at /start (initial check)
+#    - Can occur at /challenge (policy evaluation)
+#    - Less common at /continue (policy change mid-flow)
+#    - Always be prepared to handle redirect at any step
+#
+###
+
+### =============================================================================
 ### ADVANCED: Password Reset with Account Verification
 ### =============================================================================
 ### Some scenarios may require additional verification steps

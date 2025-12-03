@@ -516,6 +516,104 @@ client_id=00000000-0000-0000-0000-000000000000
 ###
 
 ### =============================================================================
+### WEB FALLBACK SCENARIOS - When to Switch to Browser-Based Auth
+### =============================================================================
+
+### Scenario 1: Redirect Challenge from /start Endpoint
+# @name fallback_redirect_start
+# When Entra ID cannot support app's requested authentication methods
+# Response: {"challenge_type": "redirect"}
+# ACTION REQUIRED: App must switch to browser-based authentication (use MSAL library)
+POST {{base_url}}/signup/v1.0/start
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&username={{username}}
+
+###
+
+### Scenario 2: Redirect Challenge from /challenge Endpoint
+# @name fallback_redirect_challenge
+# Occurs when tenant requires authentication methods not declared by app
+# For example: Tenant requires SMS OTP but app only supports email OTP and password
+# Response: {"challenge_type": "redirect"}
+# ACTION REQUIRED: Open system browser with authorization URL
+POST {{base_url}}/signup/v1.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=oob password redirect
+&continuation_token=YOUR_CONTINUATION_TOKEN
+
+###
+
+### Scenario 3: Redirect Challenge from /continue Endpoint
+# @name fallback_redirect_continue
+# Can occur if tenant authentication policies change mid-flow
+# Response: {"challenge_type": "redirect"}
+# ACTION REQUIRED: Abandon native flow, switch to browser authentication
+POST {{base_url}}/signup/v1.0/continue
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&continuation_token=YOUR_CONTINUATION_TOKEN
+&grant_type=oob
+&oob=YOUR_OTP_CODE
+
+###
+
+### =============================================================================
+### HOW TO HANDLE WEB FALLBACK IN YOUR APP
+### =============================================================================
+#
+# When you receive challenge_type="redirect" response:
+#
+# 1. DETECT THE REDIRECT:
+#    - Check if response contains: {"challenge_type": "redirect"}
+#    - This is a successful response (HTTP 200), not an error
+#
+# 2. SWITCH TO BROWSER-BASED AUTH:
+#    - Use MSAL library for your platform:
+#      * iOS/macOS: MSAL for iOS/macOS
+#      * Android: MSAL for Android
+#      * Web/JavaScript: MSAL.js
+#      * .NET: MSAL.NET
+#
+# 3. TYPICAL IMPLEMENTATION:
+#    ```
+#    if (response.challenge_type === "redirect") {
+#        // Open system browser for authentication
+#        const authUrl = await msalInstance.getAuthorizationUrl({
+#            scopes: ["openid", "profile", "offline_access"],
+#            redirectUri: "myapp://auth/callback"
+#        });
+#        openBrowser(authUrl);
+#    }
+#    ```
+#
+# 4. WHY THIS HAPPENS:
+#    - Tenant requires MFA (Multi-Factor Authentication)
+#    - Tenant requires authentication methods app doesn't support (SMS, Authenticator app)
+#    - Conditional Access policies require browser-based auth
+#    - Social identity providers (Google, Facebook, etc.) configured
+#    - FIDO2/Windows Hello configured as required method
+#
+# 5. USER EXPERIENCE:
+#    - Show user a message: "Opening browser to complete sign-up..."
+#    - Launch system browser with authorization URL
+#    - User completes auth in browser
+#    - Browser redirects back to your app with tokens
+#
+# 6. BEST PRACTICES:
+#    - Always include "redirect" in challenge_type parameter
+#    - Prepare your app to handle browser-based fallback
+#    - Test with different tenant configurations
+#    - Provide clear user messaging during transition
+#
+###
+
+### =============================================================================
 ### NOTES ON CONTINUATION TOKENS
 ### =============================================================================
 # 

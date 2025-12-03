@@ -348,6 +348,138 @@ client_id={{client_id}}
 ###
 
 ### =============================================================================
+### WEB FALLBACK SCENARIOS - When to Switch to Browser-Based Auth
+### =============================================================================
+
+### Scenario 1: Redirect Challenge from /initiate Endpoint
+# @name fallback_redirect_initiate
+# Entra ID requires authentication methods not supported by app
+# Response: {"challenge_type": "redirect"}
+# Common reasons: MFA required, Conditional Access policies, social providers
+# ACTION REQUIRED: Switch to browser-based authentication using MSAL
+POST {{base_url}}/oauth2/v2.0/initiate
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&username={{username}}
+
+###
+
+### Scenario 2: Redirect Challenge from /challenge Endpoint
+# @name fallback_redirect_challenge_signin
+# Tenant authentication requirements changed or require unsupported methods
+# Response: {"challenge_type": "redirect"}
+# Examples: SMS OTP required, Authenticator app required, FIDO2 required
+# ACTION REQUIRED: Launch system browser with MSAL authorization URL
+POST {{base_url}}/oauth2/v2.0/challenge
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&continuation_token=YOUR_CONTINUATION_TOKEN
+
+###
+
+### Scenario 3: Redirect Required for Federated User
+# @name fallback_redirect_federated
+# User belongs to federated domain (corporate SSO, social providers)
+# Response: {"challenge_type": "redirect"}
+# User must authenticate through their identity provider
+# ACTION REQUIRED: Redirect to browser for federated authentication
+POST {{base_url}}/oauth2/v2.0/initiate
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{client_id}}
+&challenge_type=password redirect
+&username=federated.user@corporate-domain.com
+
+###
+
+### =============================================================================
+### HOW TO HANDLE WEB FALLBACK IN YOUR APP
+### =============================================================================
+#
+# When you receive challenge_type="redirect" response:
+#
+# 1. DETECT THE REDIRECT:
+#    Response: {"challenge_type": "redirect"}
+#    HTTP Status: 200 OK (not an error!)
+#
+# 2. IMPLEMENTATION EXAMPLE:
+#    ```javascript
+#    async function handleSignIn(username) {
+#        const response = await fetch('/oauth2/v2.0/initiate', {
+#            method: 'POST',
+#            body: new URLSearchParams({
+#                client_id: clientId,
+#                challenge_type: 'password redirect',
+#                username: username
+#            })
+#        });
+#        
+#        const data = await response.json();
+#        
+#        if (data.challenge_type === 'redirect') {
+#            // Switch to browser-based authentication
+#            await handleBrowserAuth();
+#        } else if (data.continuation_token) {
+#            // Continue with native authentication
+#            await continueNativeAuth(data.continuation_token);
+#        }
+#    }
+#    ```
+#
+# 3. BROWSER AUTH WITH MSAL:
+#    ```javascript
+#    async function handleBrowserAuth() {
+#        const msalConfig = {
+#            auth: {
+#                clientId: 'your-client-id',
+#                authority: 'https://contoso.ciamlogin.com/contoso.onmicrosoft.com'
+#            }
+#        };
+#        
+#        const msalInstance = new PublicClientApplication(msalConfig);
+#        
+#        const loginRequest = {
+#            scopes: ['openid', 'profile', 'offline_access'],
+#            prompt: 'login'
+#        };
+#        
+#        const result = await msalInstance.loginPopup(loginRequest);
+#        // User is now authenticated
+#    }
+#    ```
+#
+# 4. COMMON SCENARIOS REQUIRING WEB FALLBACK:
+#    - Multi-Factor Authentication (MFA) enforced
+#    - SMS OTP required but app only supports email OTP
+#    - Microsoft Authenticator app required
+#    - FIDO2 security keys required
+#    - Windows Hello for Business
+#    - Social identity providers (Google, Facebook, etc.)
+#    - Federated domains (corporate SSO via SAML/WS-Fed)
+#    - Conditional Access policies requiring device compliance
+#    - Risk-based authentication (risky sign-in detected)
+#
+# 5. USER EXPERIENCE BEST PRACTICES:
+#    - Display message: "Additional verification required. Opening browser..."
+#    - Explain why browser is needed: "Your organization requires additional security"
+#    - Handle browser launch failure gracefully
+#    - Save app state before launching browser
+#    - Handle deep link return from browser
+#    - Clear sensitive data from memory before browser launch
+#
+# 6. MOBILE APP CONSIDERATIONS:
+#    - Use ASWebAuthenticationSession (iOS) or Custom Tabs (Android)
+#    - Configure redirect URI: "myapp://auth/callback"
+#    - Handle app resumption after browser auth
+#    - Test with different browsers installed
+#
+###
+
+### =============================================================================
 ### ADVANCED: Token Refresh with Rotation
 ### =============================================================================
 ### When refresh token rotation is enabled, each refresh returns new refresh_token
